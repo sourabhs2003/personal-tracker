@@ -8,8 +8,12 @@ import {
 import { Clock, TrendingUp, BookOpen, Activity, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
+import usePageTitle from '../hooks/usePageTitle';
+import WelcomeCard from '../components/WelcomeCard';
+import StudyTimeline from '../components/StudyTimeline';
 
 export default function Dashboard() {
+    usePageTitle('Dashboard');
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -20,11 +24,20 @@ export default function Dashboard() {
 
     const fetchDashboardData = async () => {
         try {
-            // Fetch Study Sessions (Last 60 days for trends)
+            // Dates
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+
             const sixtyDaysAgo = new Date();
             sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
             const sixtyDaysStr = sixtyDaysAgo.toISOString().split('T')[0];
 
+            // 1. Fetch Study Sessions (Last 60 days)
+            // We need 60 days for trend, but also specifically yesterday and today for WelcomeCard and Timeline
             const qSessions = query(
                 collection(db, 'study_sessions'),
                 where('date', '>=', sixtyDaysStr)
@@ -32,17 +45,15 @@ export default function Dashboard() {
             const sessionSnap = await getDocs(qSessions);
             const sessions = sessionSnap.docs.map(d => d.data());
 
-            // Fetch Mocks (All time or last 30? Let's fetch all for safety then filter)
-            // Or limit to 50
+            // 2. Fetch Mocks
             const qMocks = query(collection(db, 'mocks'), orderBy('date', 'desc'), limit(20));
             const mockSnap = await getDocs(qMocks);
-            const mocks = mockSnap.docs.map(d => ({ id: d.id, ...d.data() })); // mocks need id? maybe not for chart
+            const mocks = mockSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
             console.log(`Loaded ${sessions.length} study sessions and ${mocks.length} mocks from Firestore.`);
 
             // --- Aggregation ---
 
-            const todayStr = new Date().toISOString().split('T')[0];
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
             const sevenDaysStr = sevenDaysAgo.toISOString().split('T')[0];
@@ -51,8 +62,11 @@ export default function Dashboard() {
             const thirtyDaysStr = thirtyDaysAgo.toISOString().split('T')[0];
 
             // 1. Stats
-            const today_min = sessions
-                .filter(s => s.date === todayStr)
+            const todaySessions = sessions.filter(s => s.date === todayStr);
+            const today_min = todaySessions.reduce((acc, s) => acc + (s.duration_min || 0), 0);
+
+            const yesterday_min = sessions
+                .filter(s => s.date === yesterdayStr)
                 .reduce((acc, s) => acc + (s.duration_min || 0), 0);
 
             const week_min = sessions
@@ -61,35 +75,33 @@ export default function Dashboard() {
 
             const mocks_30d = mocks.filter(m => m.date >= thirtyDaysStr).length;
 
-            // 2. Study Trend (Group by Date)
+            // 2. Study Trend
             const dateMap = {};
             sessions.forEach(s => {
                 dateMap[s.date] = (dateMap[s.date] || 0) + (s.duration_min || 0);
             });
-            // Fill gaps or just map existing? Chart handles gaps if simple lines, but area chart better with continuous.
-            // For simplicity, just map existing sorted dates
             const studyTrend = Object.keys(dateMap).sort().map(date => ({
                 date,
                 total_min: dateMap[date]
             }));
 
-            // 3. Subject Trend (Group by Subject)
+            // 3. Subject Trend
             const subjectTrend = sessions.map(s => ({
                 subject: s.subject,
                 total_min: s.duration_min
             }));
 
             // 4. Mocks Trend
-            // Ascending order for chart
             const mocksTrend = [...mocks].sort((a, b) => new Date(a.date) - new Date(b.date));
             const latestMocks = [...mocks].sort((a, b) => new Date(b.date) - new Date(a.date));
 
             setData({
-                stats: { today_min, week_min, mocks_30d },
+                stats: { today_min, yesterday_min, week_min, mocks_30d },
                 studyTrend,
                 subjectTrend,
                 mocksTrend,
-                latestMocks
+                latestMocks,
+                todaySessions // Pass to Timeline
             });
 
         } catch (error) {
@@ -140,10 +152,11 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-                <p className="text-slate-400 mt-1">Track your SSC CGL prep in real time</p>
-            </div>
+            {/* 1. Motivational Intro */}
+            <WelcomeCard todayMin={data.stats.today_min} yesterdayMin={data.stats.yesterday_min} />
+
+            {/* 2. Today's Timeline */}
+            <StudyTimeline sessions={data.todaySessions} />
 
             {/* Stats Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

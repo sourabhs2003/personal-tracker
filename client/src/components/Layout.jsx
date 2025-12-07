@@ -10,7 +10,6 @@ const NAV_ITEMS = [
     { path: '/log-study', label: 'Log Study', icon: BookOpen },
     { path: '/log-mock', label: 'Log Mock', icon: PenTool },
     { path: '/chapters', label: 'Chapters', icon: Database },
-    { path: '/import', label: 'Import', icon: Upload },
 ];
 
 export default function Layout({ children }) {

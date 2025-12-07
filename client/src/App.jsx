@@ -5,7 +5,6 @@ import Dashboard from './pages/Dashboard';
 import LogStudy from './pages/LogStudy';
 import LogMock from './pages/LogMock';
 import Chapters from './pages/Chapters';
-import ImportData from './pages/ImportData';
 import Tasks from './pages/Tasks';
 
 function App() {
@@ -18,7 +17,6 @@ function App() {
           <Route path="/log-study" element={<LogStudy />} />
           <Route path="/log-mock" element={<LogMock />} />
           <Route path="/chapters" element={<Chapters />} />
-          <Route path="/import" element={<ImportData />} />
         </Routes>
       </Layout>
       <Toaster
