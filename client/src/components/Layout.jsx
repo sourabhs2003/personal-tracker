@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, PenTool, Database, Upload, Sun, Moon, User, CheckSquare, Menu, X } from 'lucide-react';
+import { LayoutDashboard, BookOpen, PenTool, Database, Upload, Sun, Moon, User, CheckSquare, Menu, X, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import clsx from 'clsx';
@@ -7,8 +7,11 @@ import clsx from 'clsx';
 const NAV_ITEMS = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/tasks', label: "Today's Tasks", icon: CheckSquare },
+    { path: '/mocks', label: 'Mocks', icon: PenTool },
     { path: '/log-study', label: 'Log Study', icon: BookOpen },
     { path: '/log-mock', label: 'Log Mock', icon: PenTool },
+    { path: '/summary', label: 'Summary', icon: BookOpen },
+    { path: '/timetable', label: 'Timetable', icon: Calendar },
     { path: '/chapters', label: 'Chapters', icon: Database },
 ];
 

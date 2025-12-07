@@ -6,6 +6,10 @@ import LogStudy from './pages/LogStudy';
 import LogMock from './pages/LogMock';
 import Chapters from './pages/Chapters';
 import Tasks from './pages/Tasks';
+import SummaryPage from './pages/SummaryPage';
+import TimetablePage from './pages/TimetablePage';
+import MocksPage from './pages/MocksPage';
+import MockAnalysisPage from './pages/MockAnalysisPage';
 
 function App() {
   return (
@@ -17,6 +21,11 @@ function App() {
           <Route path="/log-study" element={<LogStudy />} />
           <Route path="/log-mock" element={<LogMock />} />
           <Route path="/chapters" element={<Chapters />} />
+          <Route path="/summary" element={<SummaryPage />} />
+          <Route path="/timetable" element={<TimetablePage />} />
+          <Route path="/timetable" element={<TimetablePage />} />
+          <Route path="/mocks" element={<MocksPage />} />
+          <Route path="/mocks/:id" element={<MockAnalysisPage />} />
         </Routes>
       </Layout>
       <Toaster

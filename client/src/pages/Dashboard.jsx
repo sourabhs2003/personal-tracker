@@ -12,6 +12,7 @@ import usePageTitle from '../hooks/usePageTitle';
 import WelcomeCard from '../components/WelcomeCard';
 import StudyTimeline from '../components/StudyTimeline';
 
+
 export default function Dashboard() {
     usePageTitle('Dashboard');
     const [data, setData] = useState(null);
@@ -213,6 +214,8 @@ export default function Dashboard() {
                     </div>
                 </Card>
             </div>
+
+
 
             {/* Mock Analysis Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
