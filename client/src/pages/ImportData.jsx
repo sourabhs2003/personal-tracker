@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import axios from 'axios';
+import { collection, writeBatch, doc, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Upload, FileText, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -28,10 +29,12 @@ export default function ImportData() {
                     headers={['date', 'mock_name', 'score', 'attempts_total', 'correct_total']}
                 />
             </div>
+            <MigrationSection />
         </div>
     );
 }
 
+// ... ImportZone component (unchanged) ...
 function ImportZone({ title, endpoint, desc, headers }) {
     const [file, setFile] = useState(null);
     const [status, setStatus] = useState('idle'); // idle, uploading, success, error
@@ -58,18 +61,78 @@ function ImportZone({ title, endpoint, desc, headers }) {
         if (!file) return;
         setStatus('uploading');
 
-        const formData = new FormData();
-        formData.append('file', file);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target.result;
+            try {
+                const rows = text.split('\n').map(r => r.trim()).filter(r => r);
+                if (rows.length < 2) throw new Error("Empty file");
 
-        try {
-            const res = await axios.post(`http://localhost:5000/api/import/${endpoint}`, formData);
-            setStatus('success');
-            setMsg(`Successfully imported ${res.data.imported} records.`);
-        } catch (err) {
-            setStatus('error');
-            setMsg('Failed to upload. Check console or file format.');
-            console.error(err);
-        }
+                // Flexible mapping: assume header row is first
+                const header = rows[0].split(',').map(h => h.trim());
+                const dataRows = rows.slice(1);
+
+                const batchSize = 450;
+                let processed = 0;
+
+                const colRef = collection(db, endpoint === 'study-sessions' ? 'study_sessions' : 'mocks');
+
+                // Helper to map row array to object
+                const parseRow = (rowStr) => {
+                    // Simple CSV split (doesn't handle commas in quotes, but sufficient for this specific app's simple exports)
+                    const cols = rowStr.split(',');
+                    const obj = {};
+                    header.forEach((h, i) => {
+                        obj[h] = cols[i] ? cols[i].trim() : '';
+                    });
+                    return obj;
+                };
+
+                for (let i = 0; i < dataRows.length; i += batchSize) {
+                    const batch = writeBatch(db);
+                    const chunk = dataRows.slice(i, i + batchSize);
+
+                    chunk.forEach(r => {
+                        const raw = parseRow(r);
+                        if (!raw.date) return; // Skip invalid
+
+                        let docData = { ...raw, created_at: Timestamp.now(), updated_at: Timestamp.now() };
+
+                        if (endpoint === 'study-sessions') {
+                            // Calc duration
+                            const start = new Date(`1970-01-01T${raw.start_time}:00`);
+                            const end = new Date(`1970-01-01T${raw.end_time}:00`);
+                            let diff = (end - start) / 1000 / 60;
+                            if (diff < 0) diff += 24 * 60;
+                            docData.duration_min = Math.round(diff) || 0;
+                            docData.questions_solved = Number(raw.questions_solved) || 0;
+                        } else {
+                            // Mocks
+                            docData.score = Number(raw.score) || 0;
+                            docData.attempts_total = Number(raw.attempts_total) || 0;
+                            // derived/default fields if missing
+                            docData.max_marks = Number(raw.max_marks) || 200;
+                        }
+
+                        const ref = doc(colRef);
+                        // Also set id field
+                        docData.id = ref.id;
+                        batch.set(ref, docData);
+                    });
+
+                    await batch.commit();
+                    processed += chunk.length;
+                }
+
+                setStatus('success');
+                setMsg(`Successfully imported ${processed} records.`);
+            } catch (err) {
+                console.error(err);
+                setStatus('error');
+                setMsg('Failed to process CSV. ' + err.message);
+            }
+        };
+        reader.readAsText(file);
     };
 
     return (
@@ -146,6 +209,73 @@ function ImportZone({ title, endpoint, desc, headers }) {
                     <code className="break-words">{headers.join(', ')}, ...</code>
                 </div>
             </div>
+        </Card>
+    );
+}
+
+import { getDocs, updateDoc } from 'firebase/firestore';
+
+function MigrationSection() {
+    const [loading, setLoading] = useState(false);
+    const [msg, setMsg] = useState(null);
+
+    const handleSync = async () => {
+        if (!confirm("This will update all tasks and chapters to sync definitions. Continue?")) return;
+        setLoading(true);
+        setMsg(null);
+        try {
+            // 1. Sync Tasks
+            const taskSnap = await getDocs(collection(db, 'tasks'));
+            let tCount = 0;
+            const tPromises = taskSnap.docs.map(d => {
+                const data = d.data();
+                // Normalize is_done
+                const normalizedDone = typeof data.is_done === 'boolean' ? data.is_done : !!data.is_done;
+                // Check if update needed
+                if (data.id !== d.id || data.is_done !== normalizedDone) {
+                    tCount++;
+                    return updateDoc(doc(db, 'tasks', d.id), { id: d.id, is_done: normalizedDone });
+                }
+                return Promise.resolve();
+            });
+            await Promise.all(tPromises);
+
+            // 2. Sync Chapters
+            const chSnap = await getDocs(collection(db, 'chapters'));
+            let cCount = 0;
+            const cPromises = chSnap.docs.map(d => {
+                const data = d.data();
+                const normalizedHours = Number(data.target_hours || 0);
+                if (data.id !== d.id || data.target_hours !== normalizedHours) {
+                    cCount++;
+                    return updateDoc(doc(db, 'chapters', d.id), { id: d.id, target_hours: normalizedHours });
+                }
+                return Promise.resolve();
+            });
+            await Promise.all(cPromises);
+
+            setMsg(`Migration Complete: Updated ${tCount} tasks and ${cCount} chapters.`);
+
+        } catch (err) {
+            console.error(err);
+            setMsg("Error during migration: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Card>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-xl font-semibold text-white">Sync Legacy Data</h3>
+                    <p className="text-sm text-slate-400">Fix update issues for imported data (One-time)</p>
+                </div>
+                <Button onClick={handleSync} isLoading={loading} variant="secondary">
+                    Run Migration
+                </Button>
+            </div>
+            {msg && <div className="mt-4 p-3 bg-slate-800 text-slate-200 rounded text-sm">{msg}</div>}
         </Card>
     );
 }

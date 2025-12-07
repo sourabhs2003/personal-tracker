@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { db } from '../firebase';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar,
     Legend, AreaChart, Area
@@ -8,11 +9,10 @@ import { Clock, TrendingUp, BookOpen, Activity, AlertCircle } from 'lucide-react
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 
-const API_URL = 'http://localhost:5000/api';
-
 export default function Dashboard() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -20,10 +20,81 @@ export default function Dashboard() {
 
     const fetchDashboardData = async () => {
         try {
-            const res = await axios.get(`${API_URL}/dashboard`);
-            setData(res.data);
+            // Fetch Study Sessions (Last 60 days for trends)
+            const sixtyDaysAgo = new Date();
+            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+            const sixtyDaysStr = sixtyDaysAgo.toISOString().split('T')[0];
+
+            const qSessions = query(
+                collection(db, 'study_sessions'),
+                where('date', '>=', sixtyDaysStr)
+            );
+            const sessionSnap = await getDocs(qSessions);
+            const sessions = sessionSnap.docs.map(d => d.data());
+
+            // Fetch Mocks (All time or last 30? Let's fetch all for safety then filter)
+            // Or limit to 50
+            const qMocks = query(collection(db, 'mocks'), orderBy('date', 'desc'), limit(20));
+            const mockSnap = await getDocs(qMocks);
+            const mocks = mockSnap.docs.map(d => ({ id: d.id, ...d.data() })); // mocks need id? maybe not for chart
+
+            console.log(`Loaded ${sessions.length} study sessions and ${mocks.length} mocks from Firestore.`);
+
+            // --- Aggregation ---
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            const sevenDaysStr = sevenDaysAgo.toISOString().split('T')[0];
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const thirtyDaysStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+            // 1. Stats
+            const today_min = sessions
+                .filter(s => s.date === todayStr)
+                .reduce((acc, s) => acc + (s.duration_min || 0), 0);
+
+            const week_min = sessions
+                .filter(s => s.date >= sevenDaysStr)
+                .reduce((acc, s) => acc + (s.duration_min || 0), 0);
+
+            const mocks_30d = mocks.filter(m => m.date >= thirtyDaysStr).length;
+
+            // 2. Study Trend (Group by Date)
+            const dateMap = {};
+            sessions.forEach(s => {
+                dateMap[s.date] = (dateMap[s.date] || 0) + (s.duration_min || 0);
+            });
+            // Fill gaps or just map existing? Chart handles gaps if simple lines, but area chart better with continuous.
+            // For simplicity, just map existing sorted dates
+            const studyTrend = Object.keys(dateMap).sort().map(date => ({
+                date,
+                total_min: dateMap[date]
+            }));
+
+            // 3. Subject Trend (Group by Subject)
+            const subjectTrend = sessions.map(s => ({
+                subject: s.subject,
+                total_min: s.duration_min
+            }));
+
+            // 4. Mocks Trend
+            // Ascending order for chart
+            const mocksTrend = [...mocks].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latestMocks = [...mocks].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            setData({
+                stats: { today_min, week_min, mocks_30d },
+                studyTrend,
+                subjectTrend,
+                mocksTrend,
+                latestMocks
+            });
+
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
+            setError(error.message);
         } finally {
             setLoading(false);
         }
@@ -35,7 +106,16 @@ export default function Dashboard() {
         </div>
     );
 
-    if (!data) return <div className="text-red-400">Error loading data.</div>;
+    if (error) return (
+        <div className="flex flex-col items-center justify-center h-full text-red-400">
+            <AlertCircle size={48} className="mb-4" />
+            <h2 className="text-xl font-bold">Failed to load data</h2>
+            <p className="text-sm text-slate-500 mt-2">{error}</p>
+            <p className="text-xs text-slate-600 mt-4">Check console for more details.</p>
+        </div>
+    );
+
+    if (!data) return null;
 
     // Process data for charts
     const studyData = data.studyTrend.map(d => ({

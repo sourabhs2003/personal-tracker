@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Plus, Calendar, CheckCircle, Circle, Trash2, Edit2, X, Save } from 'lucide-react';
+import { Plus, Calendar, CheckCircle, Circle, Trash2, Edit2, X, Save, AlertCircle } from 'lucide-react';
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -12,6 +13,7 @@ export default function Tasks() {
     const [tasks, setTasks] = useState([]);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTask, setEditingTask] = useState(null);
 
@@ -28,13 +30,46 @@ export default function Tasks() {
         fetchTasks();
     }, [date]);
 
+
+
     const fetchTasks = async () => {
         setLoading(true);
+        setError(null);
         try {
-            const res = await axios.get(`http://localhost:5000/api/tasks?date=${date}`);
-            setTasks(res.data);
+            // Query by date
+            const q = query(
+                collection(db, "tasks"),
+                where("date", "==", date)
+            );
+
+            const snapshot = await getDocs(q);
+            const fetchedTasks = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    is_done: typeof data.is_done === 'boolean' ? data.is_done : !!data.is_done // Normalize boolean
+                };
+            });
+
+            // Client-side sort to avoid composite index requirement immediately
+            // Sorted: Undone first (is_done: 0/false), then created_at DESC
+            fetchedTasks.sort((a, b) => {
+                const doneA = a.is_done ? 1 : 0;
+                const doneB = b.is_done ? 1 : 0;
+                if (doneA !== doneB) return doneA - doneB;
+
+                // Sort by created_at desc
+                const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+                const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+                return timeB - timeA;
+            });
+
+            setTasks(fetchedTasks);
+            console.log(`Loaded ${fetchedTasks.length} tasks for date ${date}`);
         } catch (err) {
-            console.error(err);
+            console.error("Error loading tasks:", err);
+            setError(err.message);
             toast.error('Failed to load tasks');
         } finally {
             setLoading(false);
@@ -47,9 +82,13 @@ export default function Tasks() {
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_done: newStatus } : t));
 
         try {
-            await axios.put(`http://localhost:5000/api/tasks/${task.id}`, { ...task, is_done: newStatus });
+            const taskRef = doc(db, "tasks", task.id);
+            await updateDoc(taskRef, {
+                is_done: newStatus,
+                updated_at: Timestamp.now()
+            });
         } catch (err) {
-            console.error(err);
+            console.error("Error updating task:", { id: task.id, error: err });
             toast.error('Failed to update task');
             fetchTasks(); // Revert on error
         }
@@ -58,11 +97,11 @@ export default function Tasks() {
     const handleDelete = async (id) => {
         if (!confirm('Are you sure?')) return;
         try {
-            await axios.delete(`http://localhost:5000/api/tasks/${id}`);
+            await deleteDoc(doc(db, "tasks", id));
             setTasks(prev => prev.filter(t => t.id !== id));
             toast.success('Task deleted');
         } catch (err) {
-            console.error(err);
+            console.error("Error deleting task:", { id, error: err });
             toast.error('Failed to delete task');
         }
     };
@@ -96,19 +135,27 @@ export default function Tasks() {
         e.preventDefault();
         try {
             if (editingTask) {
-                await axios.put(`http://localhost:5000/api/tasks/${editingTask.id}`, {
+                const taskRef = doc(db, "tasks", editingTask.id);
+                await updateDoc(taskRef, {
                     ...formData,
-                    is_done: editingTask.is_done
+                    updated_at: Timestamp.now()
                 });
                 toast.success('Task updated');
             } else {
-                await axios.post('http://localhost:5000/api/tasks', formData);
+                const ref = await addDoc(collection(db, "tasks"), {
+                    ...formData,
+                    is_done: false,
+                    created_at: Timestamp.now(),
+                    updated_at: Timestamp.now()
+                });
+                // Optional: Store ID in doc for consistency if needed in future exports
+                await updateDoc(ref, { id: ref.id });
                 toast.success('Task created');
             }
             setIsModalOpen(false);
             fetchTasks();
         } catch (err) {
-            console.error(err);
+            console.error("Error saving task:", err);
             toast.error('Failed to save task');
         }
     };
@@ -138,7 +185,13 @@ export default function Tasks() {
             </div>
 
             <div className="space-y-3">
-                {loading ? (
+                {error ? (
+                    <div className="text-center py-12 text-red-400 border border-red-500/20 rounded-xl bg-red-500/10">
+                        <AlertCircle className="mx-auto mb-2" />
+                        <p className="font-medium">Failed to load tasks</p>
+                        <p className="text-xs mt-1 opacity-75">{error}</p>
+                    </div>
+                ) : loading ? (
                     <div className="text-center py-12 text-slate-500">Loading tasks...</div>
                 ) : tasks.length === 0 ? (
                     <div className="text-center py-12 text-slate-500 border border-dashed border-slate-800 rounded-xl">

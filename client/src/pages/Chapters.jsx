@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, Timestamp, orderBy } from 'firebase/firestore';
+import { db } from '../firebase';
 import { BookOpen, Clock, Activity, Search, Plus, Edit2, Save, X } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Button } from '../components/ui/Button';
@@ -28,20 +29,56 @@ export default function Chapters() {
     });
     const [isSaving, setIsSaving] = useState(false);
 
+    // Store sessions to avoid re-fetching
+    const [subjectSessions, setSubjectSessions] = useState([]);
+
     useEffect(() => {
-        fetchChapters();
+        fetchChaptersAndStats();
         setSelectedChapter(null); // Reset selection on subject switch
         setDetails(null);
         setNewChapter(prev => ({ ...prev, subject: filterSubject, chapter_name: '', target_hours: 10, status: 'Not Started', notes: '' }));
     }, [filterSubject]);
 
-    const fetchChapters = async () => {
+    const fetchChaptersAndStats = async () => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/chapters?subject=${filterSubject}`);
-            const sorted = res.data.sort((a, b) => a.progress_percent - b.progress_percent);
+            // 1. Fetch Chapters for Subject
+            const qChapters = query(collection(db, 'chapters'), where('subject', '==', filterSubject));
+            const chSnap = await getDocs(qChapters);
+            const chList = chSnap.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    target_hours: Number(data.target_hours || 0) // Normalize number
+                };
+            });
+
+            // 2. Fetch Sessions for Subject (to calc progress)
+            const qSessions = query(collection(db, 'study_sessions'), where('subject', '==', filterSubject));
+            const sessSnap = await getDocs(qSessions);
+            const sessions = sessSnap.docs.map(d => d.data());
+            setSubjectSessions(sessions);
+
+            // 3. Aggregate
+            const enriched = chList.map(ch => {
+                const chSessions = sessions.filter(s => s.chapter === ch.chapter_name);
+                const mins = chSessions.reduce((acc, s) => acc + (s.duration_min || 0), 0);
+                const hours = mins / 60;
+                const percent = ch.target_hours > 0 ? (hours / ch.target_hours) * 100 : 0;
+
+                return {
+                    ...ch,
+                    hours_done: hours,
+                    progress_percent: percent
+                };
+            });
+
+            const sorted = enriched.sort((a, b) => b.progress_percent - a.progress_percent);
             setChapters(sorted);
+            console.log(`Loaded ${chList.length} chapters and ${sessions.length} sessions for subject ${filterSubject}`);
+
         } catch (err) {
-            console.error(err);
+            console.error("Error loading chapters:", err);
             toast.error("Failed to load chapters");
         }
     };
@@ -50,11 +87,43 @@ export default function Chapters() {
         if (editingChapterId) return; // Prevention
         setSelectedChapter(chapter);
         setLoadingDetails(true);
+
         try {
-            const res = await axios.get(`http://localhost:5000/api/chapters/${chapter.id}/details`);
-            setDetails(res.data);
+            // Since we already fetched sessions for the subject, filter clientside
+            // This is much faster and saves reads.
+            // However, IF we needed to paginate sessions, we'd fetch here. 
+            // For now, assuming reasonable dataset size.
+
+            const chSessions = subjectSessions.filter(s => s.chapter === chapter.chapter_name);
+
+            // Sort by date
+            chSessions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const total_mins = chSessions.reduce((acc, s) => acc + (s.duration_min || 0), 0);
+            const total_hours = (total_mins / 60).toFixed(1);
+            const sessions_count = chSessions.length;
+
+            // Chart Data: Cumulative
+            let cum = 0;
+            const chartData = chSessions.map(s => {
+                cum += (s.duration_min || 0);
+                return {
+                    date: s.date,
+                    cumulative_mins: cum
+                };
+            });
+
+            setDetails({
+                stats: {
+                    total_hours,
+                    sessions_count,
+                    last_studied: chSessions.length > 0 ? chSessions[chSessions.length - 1].date : null
+                },
+                chartData
+            });
+
         } catch (err) {
-            console.error(err);
+            console.error("Error loading details:", err);
             toast.error("Failed to load details");
         } finally {
             setLoadingDetails(false);
@@ -90,25 +159,35 @@ export default function Chapters() {
         e.preventDefault();
         setIsSaving(true);
         try {
+            const payload = {
+                ...newChapter,
+                updated_at: Timestamp.now()
+            };
+
             if (editingChapterId) {
-                await axios.put(`http://localhost:5000/api/chapters/${editingChapterId}`, newChapter);
+                const ref = doc(db, 'chapters', editingChapterId);
+                await updateDoc(ref, payload);
                 toast.success('Chapter updated');
 
-                // If the updated chapter was selected, update valid details
+                // If the updated chapter was selected, update local state
                 if (selectedChapter?.id === editingChapterId) {
-                    setSelectedChapter(prev => ({ ...prev, ...newChapter }));
-                    const res = await axios.get(`http://localhost:5000/api/chapters/${editingChapterId}/details`);
-                    setDetails(res.data);
+                    const updated = { ...selectedChapter, ...payload };
+                    // Recalculate progress if target changed
+                    // (Simplification: just trigger fetchChaptersAndStats which handles everything)
+                    setSelectedChapter(updated);
                 }
 
             } else {
-                await axios.post('http://localhost:5000/api/chapters', newChapter);
+                payload.created_at = Timestamp.now();
+                const ref = await addDoc(collection(db, 'chapters'), payload);
+                // Optional: set id in doc
+                await updateDoc(ref, { id: ref.id });
                 toast.success('Chapter added successfully');
             }
             setIsModalOpen(false);
-            fetchChapters();
+            fetchChaptersAndStats();
         } catch (err) {
-            console.error(err);
+            console.error("Error saving chapter:", { id: editingChapterId, error: err });
             toast.error('Failed to save chapter');
         } finally {
             setIsSaving(false);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Save, AlertTriangle, CheckCircle2, TrendingUp, Calculator } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card } from '../components/ui/Card';
@@ -74,18 +75,24 @@ export default function LogMock() {
         e.preventDefault();
         setLoading(true);
 
-        // Include derived data in payload if backend needs it, 
-        // though backend recalculates. We send what the form has.
         const payload = {
             ...formData,
             // ensure numbers
             score: Number(formData.score),
             attempts_total: Number(formData.attempts_total),
-            max_marks: Number(formData.max_marks)
+            max_marks: Number(formData.max_marks),
+            correct_total: derived.correct,
+            wrong_total: derived.wrong,
+            negative_marks: derived.negative,
+            accuracy: derived.accuracy,
+            percent_score: derived.percentScore, // optional but good to have
+            created_at: Timestamp.now(),
+            updated_at: Timestamp.now()
         };
 
         try {
-            await axios.post('http://localhost:5000/api/mocks', payload);
+            await addDoc(collection(db, 'mocks'), payload);
+            console.log("Mock logged successfully");
             toast.success('Mock score saved!');
             setFormData(prev => ({
                 ...prev,
@@ -99,8 +106,8 @@ export default function LogMock() {
                 notes: ''
             }));
         } catch (err) {
+            console.error("Error logging mock:", err);
             toast.error('Failed to log mock.');
-            console.error(err);
         } finally {
             setLoading(false);
         }

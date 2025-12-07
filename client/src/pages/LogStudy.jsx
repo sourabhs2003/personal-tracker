@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Save, Clock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card } from '../components/ui/Card';
@@ -23,12 +24,24 @@ export default function LogStudy() {
     const [chapters, setChapters] = useState([]);
     const [loading, setLoading] = useState(false);
 
+
+
     // Load chapters when subject changes
     useEffect(() => {
         if (formData.subject) {
-            axios.get(`http://localhost:5000/api/chapters?subject=${formData.subject}`)
-                .then(res => setChapters(res.data))
-                .catch(err => console.error(err));
+            const fetchChapters = async () => {
+                try {
+                    const q = query(
+                        collection(db, 'chapters'),
+                        where('subject', '==', formData.subject)
+                    );
+                    const snap = await getDocs(q);
+                    setChapters(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+            fetchChapters();
         } else {
             setChapters([]);
         }
@@ -80,11 +93,22 @@ export default function LogStudy() {
         e.preventDefault();
         setLoading(true);
 
+        // Calc duration for storage
+        const start = new Date(`1970-01-01T${formData.start_time}:00`);
+        const end = new Date(`1970-01-01T${formData.end_time}:00`);
+        let diff = (end - start) / 1000 / 60;
+        if (diff < 0) diff += 24 * 60;
+        const duration_min = Math.round(diff);
+
         try {
-            await axios.post('http://localhost:5000/api/study-sessions', {
+            await addDoc(collection(db, 'study_sessions'), {
                 ...formData,
-                questions_solved: Number(formData.questions_solved) || 0
+                duration_min,
+                questions_solved: Number(formData.questions_solved) || 0,
+                created_at: Timestamp.now(),
+                updated_at: Timestamp.now()
             });
+            console.log("Study session logged successfully");
             toast.success('Study session logged!');
             setFormData(prev => ({
                 ...prev,
@@ -94,8 +118,8 @@ export default function LogStudy() {
                 notes: ''
             }));
         } catch (err) {
+            console.error("Error logging session:", err);
             toast.error('Failed to save session.');
-            console.error(err);
         } finally {
             setLoading(false);
         }
