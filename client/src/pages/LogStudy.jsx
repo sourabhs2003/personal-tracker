@@ -161,7 +161,7 @@ export default function LogStudy() {
                                 required
                             >
                                 <option value="">Select Subject</option>
-                                {['Quant', 'Reasoning', 'English', 'GK'].map(s => <option key={s} value={s}>{s}</option>)}
+                                {['Quant', 'Reasoning', 'English', 'GK', 'Mock'].map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
                     </div>

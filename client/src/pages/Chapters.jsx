@@ -211,7 +211,7 @@ export default function Chapters() {
                 <div className="flex items-center gap-4">
                     {/* Subject Tabs */}
                     <div className="bg-slate-900 p-1 rounded-lg border border-slate-800 flex">
-                        {['Quant', 'Reasoning', 'English', 'GK'].map(s => (
+                        {['Quant', 'Reasoning', 'English', 'GK', 'Mock'].map(s => (
                             <button
                                 key={s}
                                 onClick={() => setFilterSubject(s)}
@@ -413,7 +413,7 @@ export default function Chapters() {
                                         onChange={e => setNewChapter({ ...newChapter, subject: e.target.value })}
                                         className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200"
                                     >
-                                        {['Quant', 'Reasoning', 'English', 'GK'].map(s => <option key={s} value={s}>{s}</option>)}
+                                        {['Quant', 'Reasoning', 'English', 'GK', 'Mock'].map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
 

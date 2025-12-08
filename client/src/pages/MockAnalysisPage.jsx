@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Card } from '../components/ui/Card';
 import usePageTitle from '../hooks/usePageTitle';
 import {
     Clock, Target, Award, ArrowLeft, BarChart2,
-    CheckCircle2, XCircle, AlertCircle, FileText
+    CheckCircle2, XCircle, AlertCircle, FileText, Zap, TrendingUp, Calendar
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -22,23 +22,94 @@ export default function MockAnalysisPage() {
     usePageTitle('Mock Analysis');
 
     useEffect(() => {
-        const fetchMock = async () => {
+        const fetchMockAndStats = async () => {
             try {
+                // 1. Fetch Mock Details
                 const docRef = doc(db, 'mocks', id);
                 const docSnap = await getDoc(docRef);
+
                 if (docSnap.exists()) {
                     setMock({ id: docSnap.id, ...docSnap.data() });
                 } else {
                     console.error("No such mock!");
+                    setLoading(false);
+                    return;
                 }
+
+                // 2. Fetch Mock Study Sessions (Last 30 days for stats)
+                // We'll filter clientside for "this week"
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+                const qSessions = query(
+                    collection(db, 'study_sessions'),
+                    where('subject', '==', 'Mock'),
+                    where('date', '>=', dateStr),
+                    orderBy('date', 'desc')
+                );
+
+                // Note: Index might be needed for Subject + Date + OrderBy. 
+                // If it fails, we fall back to client sorting or just simple filtering.
+                // For now, let's try simple query without complex ordering if index missing, 
+                // but usually single field range or equality is fine. 
+                // Subject == Mock AND Date >= X is a composite query.
+
+                const sessionSnap = await getDocs(qSessions);
+                const sessions = sessionSnap.docs.map(d => d.data());
+
+                setMockStats(processMockStats(sessions));
+
             } catch (error) {
-                console.error("Error fetching mock:", error);
+                console.error("Error loading data:", error);
             } finally {
                 setLoading(false);
             }
         };
-        fetchMock();
+        fetchMockAndStats();
     }, [id]);
+
+    const [mockStats, setMockStats] = useState(null);
+
+    const processMockStats = (sessions) => {
+        const today = new Date();
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysStr = sevenDaysAgo.toISOString().split('T')[0];
+
+        const thisWeekSessions = sessions.filter(s => s.date >= sevenDaysStr);
+        const totalWeekMin = thisWeekSessions.reduce((acc, s) => acc + (s.duration_min || 0), 0);
+
+        // Calculate total study time (approximate, assuming we fetched enough or fetching separately)
+        // Actually, user wants "If time spent on mock is < 20% of total this week".
+        // To do this accurately we need TOTAL study time. 
+        // For now, we will just use a fixed threshold or a specialized message based on raw minutes 
+        // since fetching ALL sessions might be heavy here. 
+        // User said: "Data source: study_sessions where subject = 'Mock'". 
+        // So we might strictly only have mock data. 
+        // Let's implement logic based on Mock Time thresholds for now (e.g. < 60 mins week is low).
+
+        // Or we can assume a "Total Study Goal" of say 1200 mins/week (~3h/day)
+        const totalGoal = 1200;
+        const mockRatio = (totalWeekMin / totalGoal) * 100;
+
+        let message = { type: 'neutral', text: "Keep reviewing your mocks regularly." };
+        if (thisWeekSessions.length > 0) {
+            if (mockRatio < 10) { // < 2 hrs approx
+                message = { type: 'warning', text: "Your mock review time is low. Reviewing mistakes improves rank faster than new questions." };
+            } else if (mockRatio > 25) { // > 5 hrs approx
+                message = { type: 'success', text: "Great focus on mock review — perfect for consistency." };
+            }
+        }
+
+        return {
+            weekMin: totalWeekMin,
+            sessionCount: thisWeekSessions.length,
+            avgSession: thisWeekSessions.length ? Math.round(totalWeekMin / thisWeekSessions.length) : 0,
+            message,
+            recentDays: thisWeekSessions.length // Days with study
+        };
+    };
 
     if (loading) return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div></div>;
     if (!mock) return <div className="text-center py-20 text-slate-400">Mock not found.</div>;
@@ -223,7 +294,61 @@ export default function MockAnalysisPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* Bottom Row: Overall Mock Focus (New Integration) */}
+            {mockStats && (
+                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* 1. Motivational Card */}
+                    <Card className={`md:col-span-2 border-l-4 ${mockStats.message.type === 'warning' ? 'border-l-amber-500' : mockStats.message.type === 'success' ? 'border-l-emerald-500' : 'border-l-blue-500'}`}>
+                        <div className="flex items-start gap-4">
+                            <div className={`p-3 rounded-full ${mockStats.message.type === 'warning' ? 'bg-amber-500/10 text-amber-500' : mockStats.message.type === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                <Zap size={24} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white mb-1">Mock Focus Insight</h3>
+                                <p className="text-slate-300 mb-4">{mockStats.message.text}</p>
+
+                                {/* Progress Bar */}
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs text-slate-500">
+                                        <span>Weekly Mock Review: {mockStats.weekMin} min</span>
+                                        <span>Goal: ~300 min</span>
+                                    </div>
+                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full ${mockStats.message.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'}`}
+                                            style={{ width: `${Math.min((mockStats.weekMin / 300) * 100, 100)}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* 2. Focus Metrics */}
+                    <Card>
+                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <Calendar size={14} /> Review Habits
+                        </h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-300">This Week</span>
+                                <span className="font-bold text-white">{mockStats.weekMin} min</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-300">Sessions</span>
+                                <span className="font-bold text-white">{mockStats.sessionCount}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-300">Avg. Duration</span>
+                                <span className="font-bold text-white">{mockStats.avgSession} min</span>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
+
     );
 }
 

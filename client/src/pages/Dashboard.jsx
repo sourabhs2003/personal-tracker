@@ -9,8 +9,15 @@ import { Clock, TrendingUp, BookOpen, Activity, AlertCircle } from 'lucide-react
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import usePageTitle from '../hooks/usePageTitle';
-import WelcomeCard from '../components/WelcomeCard';
 import StudyTimeline from '../components/StudyTimeline';
+import AdaptiveBanner from '../components/AdaptiveBanner';
+import StudyInsights from '../components/StudyInsights';
+import StreakTracker from '../components/StreakTracker';
+import DailyGoalProgress from '../components/DailyGoalProgress';
+import SubjectBadges from '../components/SubjectBadges';
+import AnimatedNumber from '../components/AnimatedNumber';
+import { calculateStreak } from '../utils/studyAnalytics';
+
 
 
 export default function Dashboard() {
@@ -105,6 +112,41 @@ export default function Dashboard() {
                 todaySessions // Pass to Timeline
             });
 
+            // Mock Data aggregation for widget
+            const weekSessions = sessions.filter(s => s.date >= sevenDaysStr);
+            const mockWeekMin = weekSessions
+                .filter(s => s.subject === 'Mock')
+                .reduce((acc, s) => acc + (s.duration_min || 0), 0);
+
+            // Best Mock Day (Max minutes in a day for Mock)
+            const mockDaily = {};
+            sessions.forEach(s => {
+                if (s.subject === 'Mock') {
+                    mockDaily[s.date] = (mockDaily[s.date] || 0) + (s.duration_min || 0);
+                }
+            });
+            let bestMockMin = 0;
+            let bestMockDate = null;
+            Object.entries(mockDaily).forEach(([date, min]) => {
+                if (min > bestMockMin) {
+                    bestMockMin = min;
+                    bestMockDate = date;
+                }
+            });
+
+            setData(prev => ({
+                ...prev,
+                stats: { ...prev.stats, mockWeekMin, bestMockDate, bestMockMin }
+            }));
+
+            // Calculate streak for widgets
+            const streakData = calculateStreak(sessions);
+            setData(prev => ({
+                ...prev,
+                streakData,
+                allSessions: sessions // Pass all sessions for insights
+            }));
+
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
             setError(error.message);
@@ -152,24 +194,62 @@ export default function Dashboard() {
     });
 
     return (
-        <div className="space-y-8">
-            {/* 1. Motivational Intro */}
-            <WelcomeCard todayMin={data.stats.today_min} yesterdayMin={data.stats.yesterday_min} />
+        <div className="space-y-6">
+            {/* 1. Adaptive Motivational Banner */}
+            <AdaptiveBanner
+                todayMin={data.stats.today_min}
+                yesterdayMin={data.stats.yesterday_min}
+                streak={data.streakData?.currentStreak || 0}
+            />
 
             {/* 2. Today's Timeline */}
             <StudyTimeline sessions={data.todaySessions} />
 
-            {/* Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard delay={0.1} icon={<Clock className="text-blue-400" />} label="Study Today" value={`${data.stats.today_min} min`} sub="Keep pushing!" />
-                <StatCard delay={0.2} icon={<TrendingUp className="text-emerald-400" />} label="Last 7 Days" value={`${data.stats.week_min} min`} sub="Target: 1200 min" />
-                <StatCard delay={0.3} icon={<BookOpen className="text-purple-400" />} label="Mocks (30d)" value={data.stats.mocks_30d} sub="Tests taken" />
-                <StatCard delay={0.4} icon={<Activity className="text-amber-400" />} label="Avg. Daily" value={`${Math.round(data.stats.week_min / 7)} min`} sub="Last 7 days" />
+            {/* 3. Top Widgets Row - Goal, Streak, Insights */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <DailyGoalProgress todayMin={data.stats.today_min} />
+                <StreakTracker sessions={data.allSessions} />
+                <StudyInsights sessions={data.allSessions} />
             </div>
 
-            {/* Main Charts Row */}
+            {/* 4. Stats Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard
+                    delay={0.1}
+                    icon={<Clock className="text-blue-400" />}
+                    label="Study Today"
+                    value={data.stats.today_min}
+                    suffix=" min"
+                    sub="Keep pushing!"
+                />
+                <StatCard
+                    delay={0.2}
+                    icon={<TrendingUp className="text-emerald-400" />}
+                    label="Last 7 Days"
+                    value={data.stats.week_min}
+                    suffix=" min"
+                    sub="Target: 1200 min"
+                />
+                <StatCard
+                    delay={0.3}
+                    icon={<BookOpen className="text-purple-400" />}
+                    label="Mocks (30d)"
+                    value={data.stats.mocks_30d}
+                    sub="Tests taken"
+                />
+                <StatCard
+                    delay={0.4}
+                    icon={<Activity className="text-amber-400" />}
+                    label="Mock Study (Week)"
+                    value={data.stats.mockWeekMin || 0}
+                    suffix=" min"
+                    sub={data.stats.bestMockDate ? `Best: ${new Date(data.stats.bestMockDate).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'No sessions yet'}
+                />
+            </div>
+
+            {/* 5. Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card delay={0.5} className="h-[400px] flex flex-col">
+                <Card delay={0.5} className="h-[400px] flex flex-col" variant="glow">
                     <div className="mb-6">
                         <h3 className="text-lg font-semibold text-white">Study Trend</h3>
                         <p className="text-xs text-slate-400">Daily study minutes over time</p>
@@ -196,7 +276,7 @@ export default function Dashboard() {
                     </div>
                 </Card>
 
-                <Card delay={0.6} className="h-[400px] flex flex-col">
+                <Card delay={0.6} className="h-[400px] flex flex-col" variant="glow">
                     <div className="mb-6">
                         <h3 className="text-lg font-semibold text-white">Subject Breakdown</h3>
                         <p className="text-xs text-slate-400">Total minutes by subject (Last 60 days)</p>
@@ -212,12 +292,12 @@ export default function Dashboard() {
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
+                    {/* Subject Badges */}
+                    <SubjectBadges sessions={data.allSessions} />
                 </Card>
             </div>
 
-
-
-            {/* Mock Analysis Row */}
+            {/* 6. Mock Analysis Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card delay={0.7} className="lg:col-span-2 h-[350px] flex flex-col">
                     <div className="mb-6">
@@ -273,7 +353,7 @@ export default function Dashboard() {
     );
 }
 
-function StatCard({ icon, label, value, sub, delay }) {
+function StatCard({ icon, label, value, suffix = '', sub, delay }) {
     return (
         <Card delay={delay} className="flex flex-col gap-2">
             <div className="flex items-center gap-3 mb-1">
@@ -283,7 +363,9 @@ function StatCard({ icon, label, value, sub, delay }) {
                 <span className="text-sm font-medium text-slate-400">{label}</span>
             </div>
             <div>
-                <div className="text-2xl font-bold text-white tracking-tight">{value}</div>
+                <div className="text-2xl font-bold text-white tracking-tight">
+                    <AnimatedNumber value={value} suffix={suffix} />
+                </div>
                 {sub && <div className="text-xs text-slate-500">{sub}</div>}
             </div>
         </Card>

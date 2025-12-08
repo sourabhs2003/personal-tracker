@@ -1,4 +1,5 @@
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
+import { motion } from 'framer-motion';
 import { Card } from './ui/Card';
 import { Clock } from 'lucide-react';
 
@@ -57,6 +58,7 @@ export default function StudyTimeline({ sessions }) {
         if (s.includes('reason')) return 'bg-purple-500';
         if (s.includes('eng')) return 'bg-emerald-500';
         if (s.includes('gk') || s.includes('ga')) return 'bg-amber-500';
+        if (s.includes('mock')) return 'bg-purple-500';
         return 'bg-indigo-500';
     };
 
@@ -79,12 +81,21 @@ export default function StudyTimeline({ sessions }) {
 
                 {/* Bars */}
                 {sorted.map((s, idx) => (
-                    <div
+                    <motion.div
                         key={idx}
-                        className={`absolute top-4 h-12 rounded-md shadow-lg border border-white/10 ${getColor(s.subject)} hover:opacity-90 transition-opacity group cursor-default`}
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{
+                            width: `${getWidth(s.start_time, s.end_time)}%`,
+                            opacity: 1
+                        }}
+                        transition={{
+                            duration: 0.5,
+                            delay: 0.1 + idx * 0.05,
+                            ease: 'easeOut'
+                        }}
+                        className={`absolute top-4 h-12 rounded-md shadow-lg border border-white/10 ${getColor(s.subject)} hover:opacity-90 hover:shadow-xl transition-all group cursor-default`}
                         style={{
-                            left: `${getLeft(s.start_time)}%`,
-                            width: `${getWidth(s.start_time, s.end_time)}%`
+                            left: `${getLeft(s.start_time)}%`
                         }}
                     >
                         {/* Tooltip */}
@@ -98,13 +109,13 @@ export default function StudyTimeline({ sessions }) {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
                 ))}
             </div>
 
             {/* Legend */}
             <div className="mt-4 flex gap-4 text-xs text-slate-400 flex-wrap">
-                {['Quant', 'Reasoning', 'English', 'GK'].map(sub => (
+                {['Quant', 'Reasoning', 'English', 'GK', 'Mock'].map(sub => (
                     <div key={sub} className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${getColor(sub)}`}></div>
                         <span>{sub}</span>
