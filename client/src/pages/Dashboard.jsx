@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar,
-    Legend, AreaChart, Area
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { Clock, TrendingUp, BookOpen, Activity, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -16,6 +15,11 @@ import StreakTracker from '../components/StreakTracker';
 import DailyGoalProgress from '../components/DailyGoalProgress';
 import SubjectBadges from '../components/SubjectBadges';
 import AnimatedNumber from '../components/AnimatedNumber';
+import SubjectBreakdown from '../components/SubjectBreakdown';
+import StudyHeatmap from '../components/StudyHeatmap';
+import QuickSprintTimer from '../components/QuickSprintTimer';
+import StudyTrend from '../components/StudyTrend';
+import MobileCompactDashboard from '../components/MobileCompactDashboard';
 import { calculateStreak } from '../utils/studyAnalytics';
 
 
@@ -184,172 +188,132 @@ export default function Dashboard() {
         name: d.mock_name
     }));
 
-    // Simple Subject Aggregation for the Bar Chart
-    const subjects = [...new Set(data.subjectTrend.map(d => d.subject))];
-    const subjectChartData = subjects.map(sub => {
-        const total = data.subjectTrend
-            .filter(d => d.subject === sub)
-            .reduce((acc, curr) => acc + curr.total_min, 0);
-        return { subject: sub, minutes: total };
-    });
-
     return (
-        <div className="space-y-6">
-            {/* 1. Adaptive Motivational Banner */}
-            <AdaptiveBanner
-                todayMin={data.stats.today_min}
-                yesterdayMin={data.stats.yesterday_min}
-                streak={data.streakData?.currentStreak || 0}
-            />
-
-            {/* 2. Today's Timeline */}
-            <StudyTimeline sessions={data.todaySessions} />
-
-            {/* 3. Top Widgets Row - Goal, Streak, Insights */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <DailyGoalProgress todayMin={data.stats.today_min} />
-                <StreakTracker sessions={data.allSessions} />
-                <StudyInsights sessions={data.allSessions} />
+        <>
+            {/* Mobile Compact Layout - Shows on screens < 768px */}
+            <div className="md:hidden">
+                <MobileCompactDashboard data={data} />
             </div>
 
-            {/* 4. Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard
-                    delay={0.1}
-                    icon={<Clock className="text-blue-400" />}
-                    label="Study Today"
-                    value={data.stats.today_min}
-                    suffix=" min"
-                    sub="Keep pushing!"
+            {/* Desktop Layout - Shows on screens >= 768px */}
+            <div className="hidden md:block space-y-6">
+                {/* 1. Adaptive Motivational Banner */}
+                <AdaptiveBanner
+                    todayMin={data.stats.today_min}
+                    yesterdayMin={data.stats.yesterday_min}
+                    streak={data.streakData?.currentStreak || 0}
                 />
-                <StatCard
-                    delay={0.2}
-                    icon={<TrendingUp className="text-emerald-400" />}
-                    label="Last 7 Days"
-                    value={data.stats.week_min}
-                    suffix=" min"
-                    sub="Target: 1200 min"
-                />
-                <StatCard
-                    delay={0.3}
-                    icon={<BookOpen className="text-purple-400" />}
-                    label="Mocks (30d)"
-                    value={data.stats.mocks_30d}
-                    sub="Tests taken"
-                />
-                <StatCard
-                    delay={0.4}
-                    icon={<Activity className="text-amber-400" />}
-                    label="Mock Study (Week)"
-                    value={data.stats.mockWeekMin || 0}
-                    suffix=" min"
-                    sub={data.stats.bestMockDate ? `Best: ${new Date(data.stats.bestMockDate).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'No sessions yet'}
-                />
-            </div>
 
-            {/* 5. Charts Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card delay={0.5} className="h-[400px] flex flex-col" variant="glow">
-                    <div className="mb-6">
-                        <h3 className="text-lg font-semibold text-white">Study Trend</h3>
-                        <p className="text-xs text-slate-400">Daily study minutes over time</p>
-                    </div>
-                    <div className="flex-1 w-full min-h-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={studyData}>
-                                <defs>
-                                    <linearGradient id="colorMin" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-                                    itemStyle={{ color: '#fff' }}
-                                />
-                                <Area type="monotone" dataKey="minutes" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorMin)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </Card>
+                {/* 2. Today's Timeline */}
+                <StudyTimeline sessions={data.todaySessions} />
 
-                <Card delay={0.6} className="h-[400px] flex flex-col" variant="glow">
-                    <div className="mb-6">
-                        <h3 className="text-lg font-semibold text-white">Subject Breakdown</h3>
-                        <p className="text-xs text-slate-400">Total minutes by subject (Last 60 days)</p>
-                    </div>
-                    <div className="flex-1 w-full min-h-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={subjectChartData} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} horizontal={false} />
-                                <XAxis type="number" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                <YAxis dataKey="subject" type="category" stroke="#94a3b8" fontSize={12} tickLine={false} width={80} />
-                                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
-                                <Bar dataKey="minutes" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={24} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                    {/* Subject Badges */}
-                    <SubjectBadges sessions={data.allSessions} />
-                </Card>
-            </div>
+                {/* 3. Top Widgets Row - Goal, Streak, Insights, Heatmap */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <DailyGoalProgress todayMin={data.stats.today_min} />
+                    <StreakTracker sessions={data.allSessions} />
+                    <StudyInsights sessions={data.allSessions} />
+                    <StudyHeatmap sessions={data.allSessions} />
+                </div>
 
-            {/* 6. Mock Analysis Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card delay={0.7} className="lg:col-span-2 h-[350px] flex flex-col">
-                    <div className="mb-6">
-                        <h3 className="text-lg font-semibold text-white">Mock Score Trend</h3>
-                        <p className="text-xs text-slate-400">Performance consistency</p>
-                    </div>
-                    <div className="flex-1 w-full min-h-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={mockData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} domain={['auto', 'auto']} />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
-                                <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </Card>
+                {/* 4. Stats Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <StatCard
+                        delay={0.1}
+                        icon={<Clock className="text-blue-400" />}
+                        label="Study Today"
+                        value={data.stats.today_min}
+                        suffix=" min"
+                        sub="Keep pushing!"
+                    />
+                    <StatCard
+                        delay={0.2}
+                        icon={<TrendingUp className="text-emerald-400" />}
+                        label="Last 7 Days"
+                        value={data.stats.week_min}
+                        suffix=" min"
+                        sub="Target: 1200 min"
+                    />
+                    <StatCard
+                        delay={0.3}
+                        icon={<BookOpen className="text-purple-400" />}
+                        label="Mocks (30d)"
+                        value={data.stats.mocks_30d}
+                        sub="Tests taken"
+                    />
+                    <StatCard
+                        delay={0.4}
+                        icon={<Activity className="text-amber-400" />}
+                        label="Mock Study (Week)"
+                        value={data.stats.mockWeekMin || 0}
+                        suffix=" min"
+                        sub={data.stats.bestMockDate ? `Best: ${new Date(data.stats.bestMockDate).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'No sessions yet'}
+                    />
+                </div>
 
-                <Card delay={0.8} className="h-[350px] flex flex-col overflow-hidden p-0">
-                    <div className="p-6 border-b border-slate-700">
-                        <h3 className="text-lg font-semibold text-white">Recent Mocks</h3>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-0">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900/50 sticky top-0 backdrop-blur">
-                                <tr>
-                                    <th className="p-3 text-slate-400 font-medium pl-6">Mock</th>
-                                    <th className="p-3 text-slate-400 font-medium text-right pr-6">Score</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800">
-                                {data.latestMocks.map((mock, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                                        <td className="p-3 pl-6">
-                                            <div className="font-medium text-slate-200">{mock.mock_name}</div>
-                                            <div className="text-xs text-slate-500">{new Date(mock.date).toLocaleDateString()} • {Math.round(mock.accuracy || 0)}% Acc</div>
-                                        </td>
-                                        <td className="p-3 pr-6 text-right font-bold text-emerald-400">
-                                            {mock.score}
-                                        </td>
+                {/* 5. Charts Row */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <StudyTrend sessions={data.allSessions} />
+
+                    <SubjectBreakdown sessions={data.allSessions} />
+                </div>
+
+                {/* 6. Mock Analysis Row */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Card delay={0.7} className="lg:col-span-2 h-[350px] flex flex-col">
+                        <div className="mb-6">
+                            <h3 className="text-lg font-semibold text-white">Mock Score Trend</h3>
+                            <p className="text-xs text-slate-400">Performance consistency</p>
+                        </div>
+                        <div className="flex-1 w-full min-h-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={mockData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
+                                    <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} domain={['auto', 'auto']} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }} itemStyle={{ color: '#fff' }} />
+                                    <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </Card>
+
+                    <Card delay={0.8} className="h-[350px] flex flex-col overflow-hidden p-0">
+                        <div className="p-6 border-b border-slate-700">
+                            <h3 className="text-lg font-semibold text-white">Recent Mocks</h3>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-0">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-900/50 sticky top-0 backdrop-blur">
+                                    <tr>
+                                        <th className="p-3 text-slate-400 font-medium pl-6">Mock</th>
+                                        <th className="p-3 text-slate-400 font-medium text-right pr-6">Score</th>
                                     </tr>
-                                ))}
-                                {data.latestMocks.length === 0 && (
-                                    <tr><td colSpan="2" className="p-6 text-center text-slate-500">No mocks found.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800">
+                                    {data.latestMocks.map((mock, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
+                                            <td className="p-3 pl-6">
+                                                <div className="font-medium text-slate-200">{mock.mock_name}</div>
+                                                <div className="text-xs text-slate-500">{new Date(mock.date).toLocaleDateString()} • {Math.round(mock.accuracy || 0)}% Acc</div>
+                                            </td>
+                                            <td className="p-3 pr-6 text-right font-bold text-emerald-400">
+                                                {mock.score}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {data.latestMocks.length === 0 && (
+                                        <tr><td colSpan="2" className="p-6 text-center text-slate-500">No mocks found.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Quick Sprint Timer */}
+                <QuickSprintTimer />
             </div>
-        </div>
+        </>
     );
 }
 

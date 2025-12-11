@@ -325,3 +325,162 @@ export function calculateDailyGoal(todayMin, target = DAILY_GOAL_MINUTES) {
 
     return { percentage, status, color, target };
 }
+
+
+/**
+ * Format minutes to human-readable string
+ * @param {number} totalMinutes 
+ * @returns {string} e.g. "2 hr 5 min" or "45 min"
+ */
+export function formatMinutesToDuration(totalMinutes) {
+    if (!totalMinutes) return "0 min";
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0) {
+        return minutes > 0 ? `${hours} hr ${minutes} min` : `${hours} hr`;
+    }
+    return `${minutes} min`;
+}
+
+/**
+ * Filter sessions by time range
+ * @param {Array} sessions - All study sessions
+ * @param {string} range - 'Total' | 'Monthly' | 'Weekly' | 'Daily'
+ * @returns {Array} Filtered sessions
+ */
+export function filterSessionsByRange(sessions, range) {
+    if (!sessions || sessions.length === 0) return [];
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    switch (range) {
+        case 'Daily':
+            return sessions.filter(s => s.date === todayStr);
+
+        case 'Weekly': {
+            // Get Monday of current week
+            const weekStart = new Date(today);
+            const dayOfWeek = today.getDay();
+            const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday
+            weekStart.setDate(today.getDate() + diff);
+            const weekStartStr = weekStart.toISOString().split('T')[0];
+            return sessions.filter(s => s.date >= weekStartStr);
+        }
+
+        case 'Monthly': {
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const monthStartStr = monthStart.toISOString().split('T')[0];
+            return sessions.filter(s => s.date >= monthStartStr);
+        }
+
+        case 'Total':
+        default:
+            return sessions;
+    }
+}
+
+/**
+ * Get human-readable date range label
+ * @param {string} range - 'Total' | 'Monthly' | 'Weekly' | 'Daily'
+ * @returns {string} e.g. "Dec 1 - Dec 31" or "Daily - Dec 11"
+ */
+export function getDateRangeLabel(range) {
+    const today = new Date();
+
+    switch (range) {
+        case 'Daily':
+            return `Daily - ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+        case 'Weekly': {
+            const weekStart = new Date(today);
+            const dayOfWeek = today.getDay();
+            const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            weekStart.setDate(today.getDate() + diff);
+
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+
+            return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        }
+
+        case 'Monthly': {
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+            return `${monthStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${monthEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        }
+
+        case 'Total':
+        default:
+            return 'All Time';
+    }
+}
+
+/**
+ * Aggregate subject data from sessions
+ * @param {Array} sessions - Study sessions
+ * @returns {Array} Array of { subject, minutes } sorted by minutes descending
+ */
+export function aggregateSubjectData(sessions) {
+    if (!sessions || sessions.length === 0) return [];
+
+    const subjects = [...new Set(sessions.map(s => s.subject))];
+    const subjectData = subjects.map(subject => {
+        const total = sessions
+            .filter(s => s.subject === subject)
+            .reduce((acc, s) => acc + (s.duration_min || 0), 0);
+        return { subject, minutes: total };
+    });
+
+    return subjectData.sort((a, b) => b.minutes - a.minutes);
+}
+
+/**
+ * Generate heatmap data for last N days
+ * @param {Array} sessions - All study sessions
+ * @param {number} days - Number of days to include (default 30)
+ * @returns {Array} Array of { date, minutes, intensity } for each day
+ */
+export function generateHeatmapData(sessions, days = 30) {
+    if (!sessions) return [];
+
+    const today = new Date();
+    const heatmapData = [];
+
+    // Create a map of date -> total minutes
+    const dateMap = {};
+    sessions.forEach(s => {
+        dateMap[s.date] = (dateMap[s.date] || 0) + (s.duration_min || 0);
+    });
+
+    // Generate data for last N days
+    for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        const minutes = dateMap[dateStr] || 0;
+
+        // Calculate intensity level (0-4)
+        let intensity = 0;
+        if (minutes > 0) {
+            if (minutes < 30) intensity = 1;
+            else if (minutes < 90) intensity = 2;
+            else if (minutes < 150) intensity = 3;
+            else intensity = 4;
+        }
+
+        heatmapData.push({
+            date: dateStr,
+            dateObj: new Date(date),
+            minutes,
+            intensity,
+            dayOfWeek: date.getDay()
+        });
+    }
+
+    return heatmapData;
+}
+
