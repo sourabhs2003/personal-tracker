@@ -26,8 +26,8 @@ export default function TabbedCharts({ sessions }) {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex-1 px-4 py-3 text-sm font-medium transition-colors relative ${activeTab === tab.id
-                                ? 'text-white bg-slate-700/50'
-                                : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
+                            ? 'text-white bg-slate-700/50'
+                            : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
                             }`}
                     >
                         {tab.label}
@@ -50,17 +50,17 @@ export default function TabbedCharts({ sessions }) {
                     transition={{ duration: 0.2 }}
                 >
                     {activeTab === 'trend' && (
-                        <div className="h-[250px]">
+                        <div className="h-[380px]">
                             <StudyTrend sessions={sessions} />
                         </div>
                     )}
                     {activeTab === 'subjects' && (
-                        <div className="h-[250px]">
+                        <div className="h-[350px]">
                             <SubjectBreakdown sessions={sessions} />
                         </div>
                     )}
                     {activeTab === 'heatmap' && (
-                        <div className="h-[200px]">
+                        <div className="h-[280px]">
                             <StudyHeatmap sessions={sessions} />
                         </div>
                     )}

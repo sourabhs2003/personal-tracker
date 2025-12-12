@@ -484,3 +484,119 @@ export function generateHeatmapData(sessions, days = 30) {
     return heatmapData;
 }
 
+/**
+ * Bucket sessions into hour bins for hourly analysis
+ * @param {Array} sessions - Study sessions for a single day
+ * @param {number} binSizeMinutes - Size of each bin in minutes (default 60)
+ * @returns {Array} Array of { hourLabel, startHour, totalMinutes, subjectMinutes, sessions }
+ */
+export function bucketByHour(sessions, binSizeMinutes = 60) {
+    if (!sessions || sessions.length === 0) return [];
+
+    // Create hour bins (0-23 for 1-hour bins)
+    const bins = [];
+    const hoursInDay = 24;
+    const binsPerHour = 60 / binSizeMinutes;
+    const totalBins = hoursInDay * binsPerHour;
+
+    for (let i = 0; i < totalBins; i++) {
+        const startMinuteOfDay = i * binSizeMinutes;
+        const startHour = Math.floor(startMinuteOfDay / 60);
+        const startMinute = startMinuteOfDay % 60;
+
+        bins.push({
+            hourLabel: formatHourLabel(startHour, startMinute),
+            startHour,
+            startMinute,
+            totalMinutes: 0,
+            subjectMinutes: {
+                Quant: 0,
+                Reasoning: 0,
+                English: 0,
+                GK: 0,
+                Mock: 0
+            },
+            sessions: []
+        });
+    }
+
+    // Assign sessions to bins based on start time
+    sessions.forEach(session => {
+        if (!session.start_time) return;
+
+        // Parse start time (format: "HH:MM")
+        const [hourStr, minuteStr] = session.start_time.split(':');
+        const hour = parseInt(hourStr) || 0;
+        const minute = parseInt(minuteStr) || 0;
+        const sessionStartMinute = hour * 60 + minute;
+
+        // Find the appropriate bin
+        const binIndex = Math.floor(sessionStartMinute / binSizeMinutes);
+        if (binIndex >= 0 && binIndex < bins.length) {
+            const bin = bins[binIndex];
+            const duration = parseInt(session.duration_min) || 0;
+            const subject = session.subject || 'Unknown';
+
+            bin.totalMinutes += duration;
+            if (bin.subjectMinutes[subject] !== undefined) {
+                bin.subjectMinutes[subject] += duration;
+            }
+            bin.sessions.push(session);
+        }
+    });
+
+    // Filter out empty bins
+    return bins.filter(bin => bin.totalMinutes > 0);
+}
+
+/**
+ * Format hour and minute as "HH:MM"
+ * @param {number} hour - Hour (0-23)
+ * @param {number} minute - Minute (0-59, default 0)
+ * @returns {string} Formatted hour label
+ */
+export function formatHourLabel(hour, minute = 0) {
+    const h = hour.toString().padStart(2, '0');
+    const m = minute.toString().padStart(2, '0');
+    return `${h}:${m}`;
+}
+
+/**
+ * Identify time-of-day hotspots from hourly buckets
+ * @param {Array} buckets - Output from bucketByHour
+ * @returns {Object} { peakHour, peakMinutes, morningTotal, afternoonTotal, eveningTotal }
+ */
+export function getTimeOfDayHotspots(buckets) {
+    if (!buckets || buckets.length === 0) {
+        return { peakHour: null, peakMinutes: 0, morningTotal: 0, afternoonTotal: 0, eveningTotal: 0 };
+    }
+
+    // Find peak hour
+    const peak = buckets.reduce((max, bucket) =>
+        bucket.totalMinutes > max.totalMinutes ? bucket : max
+        , buckets[0]);
+
+    // Calculate time-of-day totals
+    let morningTotal = 0;   // 04:00 - 11:59
+    let afternoonTotal = 0; // 12:00 - 17:59
+    let eveningTotal = 0;   // 18:00 - 23:59
+
+    buckets.forEach(bucket => {
+        if (bucket.startHour >= 4 && bucket.startHour < 12) {
+            morningTotal += bucket.totalMinutes;
+        } else if (bucket.startHour >= 12 && bucket.startHour < 18) {
+            afternoonTotal += bucket.totalMinutes;
+        } else if (bucket.startHour >= 18 || bucket.startHour < 4) {
+            eveningTotal += bucket.totalMinutes;
+        }
+    });
+
+    return {
+        peakHour: peak.hourLabel,
+        peakMinutes: peak.totalMinutes,
+        morningTotal,
+        afternoonTotal,
+        eveningTotal
+    };
+}
+

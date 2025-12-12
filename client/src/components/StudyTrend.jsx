@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card } from './ui/Card';
 import { filterSessionsByRange, getDateRangeLabel, formatMinutesToDuration } from '../utils/studyAnalytics';
+import { Clock } from 'lucide-react';
+import DailyHourlyModal from './DailyHourlyModal';
 
 const RANGES = ['Total', 'Monthly', 'Weekly', 'Daily'];
 
@@ -13,10 +15,20 @@ export default function StudyTrend({ sessions }) {
     const [selectedRange, setSelectedRange] = useState(() => {
         return localStorage.getItem('zowrox.studyTrendRange') || 'Total';
     });
+    const [showHourlyModal, setShowHourlyModal] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
 
     useEffect(() => {
         localStorage.setItem('zowrox.studyTrendRange', selectedRange);
     }, [selectedRange]);
+
+    useEffect(() => {
+        // Detect mobile viewport
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     const filteredSessions = filterSessionsByRange(sessions, selectedRange);
 
@@ -32,6 +44,7 @@ export default function StudyTrend({ sessions }) {
     }));
 
     const dateRangeLabel = getDateRangeLabel(selectedRange);
+    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     const CustomTooltip = ({ active, payload }) => {
         if (!active || !payload || !payload.length) return null;
@@ -46,80 +59,110 @@ export default function StudyTrend({ sessions }) {
     };
 
     return (
-        <Card delay={0.5} className="h-[400px] flex flex-col" variant="glow">
-            {/* Header with Range Selector */}
-            <div className="flex items-start justify-between mb-6">
-                <div>
-                    <h3 className="text-lg font-semibold text-white">Study Trend</h3>
-                    <p className="text-xs text-slate-400 mt-1">Showing: {dateRangeLabel}</p>
-                </div>
+        <>
+            <Card delay={0.5} className="h-full flex flex-col" variant="glow">
+                {/* Header with Range Selector */}
+                <div className="flex items-start justify-between mb-6">
+                    <div>
+                        <h3 className="text-lg font-semibold text-white">Study Trend</h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                            {selectedRange === 'Daily'
+                                ? `${dateRangeLabel} — Click below for hourly breakdown`
+                                : `Showing: ${dateRangeLabel}`}
+                        </p>
+                    </div>
 
-                {/* Range Toggle */}
-                <div className="flex gap-1 bg-slate-900/50 rounded-lg p-1 border border-slate-700/50">
-                    {RANGES.map(range => (
-                        <button
-                            key={range}
-                            onClick={() => setSelectedRange(range)}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${selectedRange === range
+                    {/* Range Toggle */}
+                    <div className="flex gap-1 bg-slate-900/50 rounded-lg p-1 border border-slate-700/50">
+                        {RANGES.map(range => (
+                            <button
+                                key={range}
+                                onClick={() => setSelectedRange(range)}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${selectedRange === range
                                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                }`}
-                        >
-                            {range}
-                        </button>
-                    ))}
+                                    }`}
+                            >
+                                {range}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            </div>
 
-            {/* Chart */}
-            <div className="flex-1 w-full min-h-0">
-                <AnimatePresence mode="wait">
-                    {studyData.length === 0 ? (
-                        <motion.div
-                            key="empty"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center justify-center h-full"
-                        >
-                            <p className="text-slate-500 text-sm">No data for selected range</p>
-                        </motion.div>
-                    ) : (
-                        <motion.div
-                            key={selectedRange}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.3 }}
-                            className="h-full"
-                        >
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={studyData}>
-                                    <defs>
-                                        <linearGradient id="colorMin" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                    <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="minutes"
-                                        stroke="#3b82f6"
-                                        strokeWidth={2}
-                                        fillOpacity={1}
-                                        fill="url(#colorMin)"
-                                        animationDuration={600}
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-        </Card>
+                {/* Chart */}
+                <div className="flex-1 w-full min-h-[240px]">
+                    <AnimatePresence mode="wait">
+                        {studyData.length === 0 ? (
+                            <motion.div
+                                key="empty"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="flex items-center justify-center h-full"
+                            >
+                                <p className="text-slate-500 text-sm">No data for selected range</p>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key={selectedRange}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.3 }}
+                                className="h-full"
+                            >
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={studyData}>
+                                        <defs>
+                                            <linearGradient id="colorMin" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
+                                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="minutes"
+                                            stroke="#3b82f6"
+                                            strokeWidth={2}
+                                            fillOpacity={1}
+                                            fill="url(#colorMin)"
+                                            animationDuration={600}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* CTA for Hourly Breakdown - Shows on Daily view */}
+                {selectedRange === 'Daily' && studyData.length > 0 && (
+                    <motion.button
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
+                        onClick={() => setShowHourlyModal(true)}
+                        className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r 
+                            from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 
+                            text-white rounded-lg font-semibold transition-all text-sm shadow-lg 
+                            shadow-blue-600/30 hover:shadow-blue-600/50"
+                    >
+                        <Clock size={18} />
+                        View Hourly Breakdown
+                    </motion.button>
+                )}
+            </Card>
+
+            {/* Daily Hourly Modal */}
+            <DailyHourlyModal
+                isOpen={showHourlyModal}
+                onClose={() => setShowHourlyModal(false)}
+                selectedDate={new Date().toISOString().split('T')[0]}
+            />
+        </>
     );
 }
